@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home</title>
+<style>
+  /* Gruvbox soft */
+  :root {
+    --bg: #F2E5BC; --fg: #504945; --muted: #7C6F64; --line: #D5C4A1; --accent: #AF3A03;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #32302F; --fg: #D5C4A1; --muted: #928374; --line: #504945; --accent: #FE8019; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: grid; place-items: center;
+    background: var(--bg); color: var(--fg); font: 1.15rem/1.5 var(--mono);
+  }
+  main { width: min(40rem, 88vw); margin-top: -8vh; }
+  #clock { font-size: clamp(4rem, 12vw, 8.5rem); line-height: 1; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+  #date { color: var(--muted); margin-top: .5rem; }
+  form { position: relative; display: flex; gap: 1ch; margin-top: 1.6rem; }
+  form label { color: var(--accent); user-select: none; }
+  #q {
+    flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: none;
+    font: inherit; color: var(--fg); caret-color: transparent;
+  }
+  /* Block cursor drawn over the input; the native caret is hidden above. */
+  .field { position: relative; flex: 1; min-width: 0; display: flex; }
+  #caret { position: absolute; top: 0; width: 1ch; background: var(--accent); color: var(--bg); white-space: pre; pointer-events: none; }
+  .field:not(:focus-within) #caret { display: none; }
+  #chip { background: var(--line); color: var(--accent); font-weight: 600; padding: 0 1ch; }
+  #chip[hidden] { display: none; }
+  #menu {
+    position: absolute; top: calc(100% + .4rem); left: calc(2.5ch - 2px); margin: 0; padding: 0 0 0 .5ch; list-style: none;
+    border-left: 2px solid var(--accent); color: var(--muted);
+  }
+  #menu li { display: grid; grid-template-columns: 2ch auto; gap: 2ch; padding: 0 1ch; }
+  #menu b { color: var(--accent); }
+  #menu .hit { background: var(--line); color: var(--fg); }
+  @media (prefers-reduced-motion: no-preference) {
+    #menu { animation: in .12s ease-out; }
+    @keyframes in { from { opacity: 0; transform: translateY(-.2rem); } }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div id="clock"></div>
+  <div id="date"></div>
+  <form id="search" autocomplete="off">
+    <label for="q">~ ❯</label>
+    <span id="chip" hidden></span>
+    <span class="field">
+      <input id="q" type="text" spellcheck="false" aria-describedby="menu">
+      <span id="caret" aria-hidden="true"></span>
+    </span>
+    <ul id="menu" hidden></ul>
+  </form>
+</main>
+<script>
+  const SEARCH_URL = 'https://www.google.com/search?q=';
+  const HOUR_12 = false;
+  // First word picks the engine. A bare key with no query opens the site.
+  const ENGINES = {
+    gh: { name: 'github',    search: 'https://github.com/search?q=',              home: 'https://github.com' },
+    yt: { name: 'youtube',   search: 'https://www.youtube.com/results?search_query=', home: 'https://www.youtube.com' },
+    w:  { name: 'wikipedia', search: 'https://en.wikipedia.org/w/index.php?search=', home: 'https://en.wikipedia.org' },
+  };
+
+  const clock = document.getElementById('clock');
+  const date = document.getElementById('date');
+  function tick() {
+    const d = new Date();
+    clock.textContent = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: HOUR_12 }).replace(/\s*[AP]M$/i, '');
+    date.textContent = d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  }
+  tick();
+  setInterval(tick, 1000);
+
+  function isAddress(s) {
+    return /^(https?|file):\/\//i.test(s)
+      || /^localhost(:\d+)?(\/\S*)?$/i.test(s)
+      || /^[^\s/]+\.[a-z]{2,}(:\d+)?(\/\S*)?$/i.test(s);
+  }
+
+  function resolve(raw) {
+    const s = raw.trim();
+    if (!s) return null;
+    const [head, ...rest] = s.split(/\s+/);
+    const engine = Object.hasOwn(ENGINES, head) && ENGINES[head];
+    if (engine) return rest.length ? engine.search + encodeURIComponent(rest.join(' ')) : engine.home;
+    if (/^(https?|file):\/\//i.test(s)) return s;
+    if (isAddress(s)) return (/^localhost/i.test(s) ? 'http://' : 'https://') + s;
+    return SEARCH_URL + encodeURIComponent(s);
+  }
+
+  const q = document.getElementById('q');
+  const menu = document.getElementById('menu');
+  const chip = document.getElementById('chip');
+  let active = null; // engine key shown as a chip once "key<space>" is typed
+
+  function setActive(key) {
+    active = key;
+    chip.textContent = key || '';
+    chip.hidden = !key;
+  }
+
+  // While the first word is being typed, list keys it could still become. A key plus a space turns into a chip.
+  // ponytail: 1ch-per-character positioning, so wide glyphs (CJK, emoji) misplace the block; measure text width if that matters.
+  const caret = document.getElementById('caret');
+  function drawCaret() {
+    const i = q.selectionStart;
+    caret.hidden = i !== q.selectionEnd;
+    caret.textContent = q.value[i] || ' ';
+    caret.style.left = `calc(${i}ch - ${q.scrollLeft}px)`;
+  }
+  ['focus', 'selectionchange', 'scroll'].forEach(t => q.addEventListener(t, drawCaret));
+
+  q.addEventListener('input', () => {
+    const m = !active && q.value.match(/^\s*(\S+)\s/);
+    if (m && Object.hasOwn(ENGINES, m[1])) {
+      setActive(m[1]);
+      q.value = q.value.slice(m[0].length).trimStart();
+    }
+    const v = q.value.trimStart();
+    const keys = !active && v && !/\s/.test(v) ? Object.keys(ENGINES).filter(k => k.startsWith(v)) : [];
+    menu.hidden = !keys.length;
+    menu.innerHTML = keys.map(k => `<li class="${k === v ? 'hit' : ''}"><b>${k}</b><span>${ENGINES[k].name}</span></li>`).join('');
+    drawCaret();
+  });
+
+  // Backspace at the start of the field removes the chip.
+  q.addEventListener('keydown', e => {
+    if (e.key === 'Backspace' && active && q.selectionStart === 0 && q.selectionEnd === 0) {
+      e.preventDefault();
+      setActive(null);
+      q.dispatchEvent(new Event('input'));
+    }
+  });
+
+  document.getElementById('search').addEventListener('submit', e => {
+    e.preventDefault();
+    const url = resolve(active ? `${active} ${q.value}` : q.value);
+    if (url) location.href = url;
+  });
+</script>
+</body>
+</html>
