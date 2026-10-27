@@ -42,7 +42,7 @@
     background: var(--panel); border: 1px solid var(--line); border-radius: 4px; color: var(--muted);
   }
   #sugg li { padding: 0 1ch; border-left: 2px solid transparent; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #sugg li.key { display: grid; grid-template-columns: 2ch auto; gap: 2ch; }
+  #sugg li.key { display: grid; grid-template-columns: 4ch auto; gap: 2ch; }
   #sugg b { color: var(--accent); }
   #sugg .rest, #sugg .hit { color: var(--fg); }
   #sugg .hit, #sugg [aria-selected="true"] { background: var(--line); }
@@ -72,11 +72,12 @@
   const SEARCH_URL = 'https://www.google.com/search?q=';
   const SUGGEST_URL = 'https://suggest.selimd.me/?q=';
   const HOUR_12 = false;
-  // First word picks the engine. A bare key with no query opens the site.
+  // First word picks the engine. A bare key opens the site; entries without search are links only, so "life foo" is a normal search.
   const ENGINES = {
     gh: { name: 'github',    search: 'https://github.com/search?q=',              home: 'https://github.com' },
     yt: { name: 'youtube',   search: 'https://www.youtube.com/results?search_query=', home: 'https://www.youtube.com' },
     w:  { name: 'wikipedia', search: 'https://en.wikipedia.org/w/index.php?search=', home: 'https://en.wikipedia.org' },
+    life: { name: 'life.selimd.me', home: 'https://life.selimd.me' },
   };
 
   const clock = document.getElementById('clock');
@@ -100,7 +101,8 @@
     if (!s) return null;
     const [head, ...rest] = s.split(/\s+/);
     const engine = Object.hasOwn(ENGINES, head) && ENGINES[head];
-    if (engine) return rest.length ? engine.search + encodeURIComponent(rest.join(' ')) : engine.home;
+    if (engine && !rest.length) return engine.home;
+    if (engine?.search) return engine.search + encodeURIComponent(rest.join(' '));
     if (/^(https?|file):\/\//i.test(s)) return s;
     if (isAddress(s)) return (/^localhost/i.test(s) ? 'http://' : 'https://') + s;
     return SEARCH_URL + encodeURIComponent(s);
@@ -182,7 +184,7 @@
 
   q.addEventListener('input', () => {
     const m = !active && q.value.match(/^\s*(\S+)\s/);
-    if (m && Object.hasOwn(ENGINES, m[1])) {
+    if (m && Object.hasOwn(ENGINES, m[1]) && ENGINES[m[1]].search) {
       setActive(m[1]);
       q.value = q.value.slice(m[0].length).trimStart();
     }
@@ -200,7 +202,12 @@
     drawCaret();
   }
 
+  // Engines with search become the chip; link-only ones (no search) open right away.
   function pickKey(key) {
+    if (!ENGINES[key].search) {
+      q.value = key;
+      return go();
+    }
     setActive(key);
     q.value = typed = '';
     close();
