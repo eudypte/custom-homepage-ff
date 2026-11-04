@@ -231,16 +231,9 @@
       e.preventDefault();
       move(e.key === 'ArrowDown' ? 1 : -1);
     } else if (e.key === 'Escape') {
-      // First Esc closes the dropdown, the next one leaves the field.
-      if (items.length) {
-        e.preventDefault();
-        e.stopPropagation();
-        q.value = typed;
-        close();
-        drawCaret();
-      } else {
-        q.blur();
-      }
+      e.preventDefault();
+      q.value = typed;
+      q.blur();
     } else if (e.key === 'Enter' && items[hi]?.key) {
       e.preventDefault();
       pickKey(items[hi].key);
