@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Home</title>
+<script>try { document.documentElement.dataset.theme = localStorage.theme || ''; } catch {}</script>
 <style>
   /* Gruvbox soft */
   :root {
@@ -14,6 +15,7 @@
   @media (prefers-color-scheme: dark) {
     :root { --bg: #32302F; --fg: #D5C4A1; --muted: #928374; --line: #504945; --accent: #FE8019; --panel: #3C3836; }
   }
+  :root[data-theme="white"] { --bg: #FFFFFF; --fg: #1A1A1A; --muted: #8C8C8C; --line: #EBEBEB; --accent: #1A1A1A; --panel: #FFFFFF; color-scheme: light; }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body {
@@ -42,7 +44,7 @@
     background: var(--panel); border: 1px solid var(--line); border-radius: 4px; color: var(--muted);
   }
   #sugg li { padding: 0 1ch; border-left: 2px solid transparent; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #sugg li.key { display: grid; grid-template-columns: 4ch auto; gap: 2ch; }
+  #sugg li.key { display: grid; grid-template-columns: 5ch auto; gap: 2ch; }
   #sugg b { color: var(--accent); }
   #sugg .rest, #sugg .hit { color: var(--fg); }
   #sugg .hit, #sugg [aria-selected="true"] { background: var(--line); }
@@ -72,6 +74,7 @@
   const SEARCH_URL = 'https://www.google.com/search?q=';
   const SUGGEST_URL = 'https://suggest.selimd.me/?q=';
   const HOUR_12 = false;
+  const THEMES = ['white', 'gruvbox'];
   // First word picks the engine. A bare key opens the site; entries without search are links only, so "life foo" is a normal search.
   const ENGINES = {
     gh: { name: 'github',    search: 'https://github.com/search?q=',              home: 'https://github.com' },
@@ -130,7 +133,7 @@
   }
   ['focus', 'selectionchange', 'scroll'].forEach(t => q.addEventListener(t, drawCaret));
 
-  // Dropdown rows: { key } for an engine the first word could become, { text } for a fetched suggestion.
+  // Dropdown rows: { key } for an engine the first word could become, { theme, text } for a theme command, { text } for a fetched suggestion.
   let items = [];
   let hi = -1;    // highlighted row, -1 = the typed text
   let typed = ''; // input text before arrow keys previewed a row
@@ -143,6 +146,7 @@
     sugg.innerHTML = items.map((it, i) => {
       const attrs = `id="opt-${i}" role="option" aria-selected="${i === hi}"`;
       if (it.key) return `<li class="key${it.key === t ? ' hit' : ''}" ${attrs}><b>${it.key}</b><span>${ENGINES[it.key].name}</span></li>`;
+      if (it.theme) return `<li class="key${it.text === t ? ' hit' : ''}" ${attrs}><b>theme</b><span>${it.theme}</span></li>`;
       const n = it.text.toLowerCase().startsWith(t) ? t.length : 0;
       return `<li ${attrs}>${esc(it.text.slice(0, n))}<span class="rest">${esc(it.text.slice(n))}</span></li>`;
     }).join('');
@@ -160,10 +164,9 @@
   }
 
   // Key rows show at once; suggestions are appended after a debounce. Failures leave just the key rows.
-  function update(keys) {
+  function update(keyItems) {
     clearTimeout(timer);
     ctrl?.abort();
-    const keyItems = keys.map(key => ({ key }));
     items = keyItems;
     hi = -1;
     render();
@@ -191,7 +194,8 @@
     }
     typed = q.value;
     const v = typed.trimStart();
-    update(!active && v && !/\s/.test(v) ? Object.keys(ENGINES).filter(k => k.startsWith(v)) : []);
+    const keys = !active && v && !/\s/.test(v) ? Object.keys(ENGINES).filter(k => k.startsWith(v)).map(key => ({ key })) : [];
+    update([...keys, ...(active ? [] : themeRows(v))]);
     drawCaret();
   });
 
@@ -215,7 +219,25 @@
     drawCaret();
   }
 
+  function themeRows(v) {
+    const m = v.match(/^(\S+)(?:\s+(\S*))?$/);
+    if (!m || !'theme'.startsWith(m[1]) || (m[2] !== undefined && m[1] !== 'theme')) return [];
+    return THEMES.filter(t => t.startsWith(m[2] || '')).map(theme => ({ theme, text: 'theme ' + theme }));
+  }
+
+  function setTheme(t) {
+    document.documentElement.dataset.theme = t;
+    try { localStorage.theme = t; } catch {}
+  }
+
   function go() {
+    const m = !active && q.value.trim().match(/^theme(?:\s+(\S+))?$/);
+    if (m && (!m[1] || THEMES.includes(m[1]))) {
+      setTheme(m[1] || (document.documentElement.dataset.theme === 'white' ? 'gruvbox' : 'white'));
+      q.value = typed = '';
+      close();
+      return drawCaret();
+    }
     const url = resolve(active ? `${active} ${q.value}` : q.value);
     close();
     if (url) location.href = url;
